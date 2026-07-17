@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hughie's — Label Printer</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #f4f4f4; margin: 0; padding: 16px; color: #222; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  h1 { font-size: 18px; margin: 0 0 16px; }
+  .card { background: #fff; border-radius: 10px; padding: 18px; box-shadow: 0 2px 12px rgba(0,0,0,.06); margin-bottom: 16px; }
+  label { display: block; font-size: 12px; font-weight: 700; color: #555; margin-bottom: 4px; margin-top: 12px; }
+  label:first-child { margin-top: 0; }
+  input, select { width: 100%; padding: 10px 12px; font-size: 15px; border: 1px solid #ddd; border-radius: 8px; }
+  button { cursor: pointer; border: none; border-radius: 8px; padding: 12px 16px; font-size: 14px; font-weight: 700; }
+  .btn-primary { background: #3DDAB4; color: #063; width: 100%; margin-top: 14px; }
+  .btn-outline { background: #fff; border: 1.5px solid #ccc; color: #333; }
+  .btn-outline:hover { background: #f0f0f0; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  #printer-status { font-size: 12px; color: #888; }
+  #login-error, #form-error { color: #c00; font-size: 13px; margin-top: 8px; display: none; }
+  #app { display: none; }
+  #debug-log { display: none; background: #111; color: #3DDAB4; border-radius: 8px; padding: 10px 12px; margin-top: 12px; font-family: monospace; font-size: 11px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; }
+  .who { font-size: 12px; color: #888; margin-bottom: 12px; }
+  .who button { background: none; border: none; color: #c00; text-decoration: underline; font-weight: 400; padding: 0; margin-left: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🏷️ Hughie's Label Printer</h1>
+
+  <!-- LOGIN -->
+  <div class="card" id="login-card">
+    <label>Station PIN</label>
+    <input type="password" inputmode="numeric" id="login-pin" autocomplete="off" placeholder="••••" style="letter-spacing:6px;font-size:20px;text-align:center">
+    <button class="btn-primary" onclick="doLogin()">Unlock</button>
+    <div id="login-error"></div>
+  </div>
+
+  <!-- APP -->
+  <div id="app">
+    <div class="who">Central Kitchen Label Station<button onclick="doLogout()">Lock</button></div>
+
+    <div class="card">
+      <div class="row">
+        <span style="font-weight:700;font-size:13px">🖨️ Printer</span>
+        <span id="printer-status">Not connected</span>
+        <button class="btn-outline" style="margin-left:auto" id="connect-btn" onclick="connectPrinter()">Connect Printer</button>
+        <button class="btn-outline" style="font-size:11px;padding:8px 10px" onclick="connectPrinter(true)" title="Use if the picker shows the printer but selecting it does nothing">Show All Devices</button>
+        <button class="btn-outline" style="font-size:11px;padding:8px 10px" onclick="toggleDebugLog()">🐞 Log</button>
+      </div>
+      <div id="debug-log"></div>
+    </div>
+
+    <div class="card">
+      <label>Item *</label>
+      <select id="label-item" onchange="onItemSelect()"><option value="">— Select Item —</option></select>
+
+      <label>Storage Type</label>
+      <div id="storage-display" style="padding:8px 12px;background:#f5f5f5;border-radius:6px;font-size:13px;color:#555">—</div>
+
+      <label>Temp Produced (°F) *</label>
+      <input type="number" id="label-temp" placeholder="e.g. 38" style="max-width:160px">
+
+      <label>Operator *</label>
+      <select id="label-operator"><option value="">— Select Operator —</option></select>
+
+      <label>Qty to Print</label>
+      <input type="number" id="label-qty" value="1" min="1" max="50" style="max-width:100px">
+
+      <button class="btn-primary" onclick="printBatchLabel()">🖨️ Print Label</button>
+      <div id="form-error"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+//  CONFIG — update if the stable deployment URL ever changes
+// ============================================================
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbyva7bEId-pp2BLaj07tORWPRetJesbsmhoep8eP_xmiJQvdSCoxhyZT6UnSetEd3r6sg/exec';
+
+// ============================================================
+//  RPC helper — calls the Apps Script doPost JSON-RPC dispatcher.
+//  Content-Type must stay text/plain so the browser treats this as a
+//  "simple request" and skips a CORS preflight (Apps Script can't
+//  answer an OPTIONS preflight, so a preflighted request would fail).
+// ============================================================
+function rpc(fn, args) {
+  return fetch(GAS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ fn: fn, args: args || [] })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.error) throw new Error(data.error);
+    return data.result;
+  });
+}
+
+// ============================================================
+//  AUTH — station is gated by a shared PIN (not a per-user login), like
+//  the other kiosk pages. "Unlocked" is remembered in localStorage so the
+//  station doesn't need the PIN re-entered every time it's opened.
+// ============================================================
+var _unlocked = localStorage.getItem('labelPrinterUnlocked') === 'yes';
+var _foodCatalog = [];
+
+function doLogin() {
+  var pin   = document.getElementById('login-pin').value.trim();
+  var errEl = document.getElementById('login-error');
+  errEl.style.display = 'none';
+  if (!pin) { errEl.textContent = 'Enter the station PIN.'; errEl.style.display = 'block'; return; }
+  rpc('labelKioskVerifyPin', [pin])
+    .then(function() {
+      _unlocked = true;
+      localStorage.setItem('labelPrinterUnlocked', 'yes');
+      showApp();
+    })
+    .catch(function(e) { errEl.textContent = e.message; errEl.style.display = 'block'; });
+}
+
+function doLogout() {
+  localStorage.removeItem('labelPrinterUnlocked');
+  _unlocked = false;
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-card').style.display = '';
+  document.getElementById('login-pin').value = '';
+}
+
+function showApp() {
+  document.getElementById('login-card').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  loadData();
+}
+
+if (_unlocked) showApp();
+
+function loadData() {
+  rpc('labelKioskGetCatalog', [])
+    .then(function(cat) {
+      _foodCatalog = cat || [];
+      var sel = document.getElementById('label-item');
+      sel.innerHTML = '<option value="">— Select Item —</option>' +
+        _foodCatalog.map(function(i) {
+          return '<option value="' + esc(i.id) + '" data-name="' + esc(i.name) + '" data-storage="' + esc(i.storageType || 'Refrigerated') + '">' + esc(i.name) + '</option>';
+        }).join('');
+    })
+    .catch(function(e) { showFormError(e.message); });
+
+  rpc('labelKioskGetOperators', [])
+    .then(function(ops) {
+      var sel = document.getElementById('label-operator');
+      sel.innerHTML = '<option value="">— Select Operator —</option>' +
+        (ops || []).map(function(o) { return '<option value="' + esc(o.name) + '">' + esc(o.name) + '</option>'; }).join('');
+    })
+    .catch(function(e) { showFormError(e.message); });
+}
+
+function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function showFormError(msg) { var el = document.getElementById('form-error'); el.textContent = msg; el.style.display = 'block'; }
+
+function onItemSelect() {
+  var sel  = document.getElementById('label-item');
+  var opt  = sel.selectedOptions[0];
+  var stor = opt ? (opt.getAttribute('data-storage') || 'Refrigerated') : '';
+  var disp = document.getElementById('storage-display');
+  disp.textContent = stor || '—';
+  disp.style.color = stor === 'Frozen' ? '#007bff' : (stor ? '#28a745' : '#555');
+}
+
+// ============================================================
+//  LABEL / TSPL HELPERS
+// ============================================================
+function genBatchId() {
+  var d = new Date(), p = function(n) { return n < 10 ? '0' + n : '' + n; };
+  return 'B' + (d.getFullYear()+'').slice(2) + p(d.getMonth()+1) + p(d.getDate()) + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+function calcUseBy(storageType) {
+  var d = new Date();
+  if (storageType === 'Frozen') d.setMonth(d.getMonth() + 1); else d.setDate(d.getDate() + 7);
+  return (d.getMonth()+1) + '/' + d.getDate() + '/' + d.getFullYear();
+}
+function fmtDate(d) { return (d.getMonth()+1) + '/' + d.getDate() + '/' + d.getFullYear(); }
+function fmtTime(d) { var h = d.getHours(), m = d.getMinutes(), ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return h + ':' + (m < 10 ? '0'+m : m) + ' ' + ap; }
+
+function buildTspl(itemId, itemName, storageType, temp, operator, batchId, qty) {
+  var now     = new Date();
+  var datePd  = fmtDate(now);
+  var timePd  = fmtTime(now);
+  var useBy   = calcUseBy(storageType);
+  var warning = storageType === 'Frozen' ? 'MAINTAIN AT 0 F OR BELOW' : 'MAINTAIN AT 41 F OR BELOW';
+  var qrData  = itemId + '|' + batchId;
+  var name    = itemName.toUpperCase();
+  return [
+    'SIZE 3 INCH,5 INCH',
+    'GAP 0.12 INCH,0 INCH',
+    'DIRECTION 0',
+    'CLS',
+    'QRCODE 15,15,H,4,A,0,"' + qrData + '"',
+    'TEXT 175,15,"2",0,1,1,"Batch: ' + batchId + '"',
+    'TEXT 175,45,"2",0,1,1,"' + itemId + '"',
+    'BAR 0,125,609,2',
+    'TEXT 15,135,"3",0,2,2,"' + name + '"',
+    'BAR 0,200,609,3',
+    'TEXT 15,207,"2",0,1,2,"' + warning + '"',
+    'BAR 0,252,609,3',
+    'TEXT 15,270,"2",0,1,1,"Produced: ' + datePd + '"',
+    'TEXT 15,295,"2",0,1,1,"Time:     ' + timePd + '"',
+    'TEXT 15,320,"2",0,1,1,"Temp:     ' + temp + ' F"',
+    'TEXT 15,345,"2",0,1,1,"Operator: ' + operator + '"',
+    'BAR 0,378,609,3',
+    'TEXT 15,392,"3",0,1,2,"USE BY:"',
+    'BAR 0,442,609,2',
+    'TEXT 15,455,"5",0,3,3,"' + useBy + '"',
+    'PRINT ' + (qty || 1) + ',1'
+  ].join('\r\n') + '\r\n';
+}
+
+// ============================================================
+//  BLE — runs top-level in this tab, not inside an Apps Script iframe,
+//  so the Permissions-Policy restriction that blocked this inside the
+//  main app doesn't apply here.
+// ============================================================
+var _printerDevice = null;
+var _printerTxChar = null;
+var _BLE_SERVICES = ['6e400001-b5a3-f393-e0a9-e50e24dcca9e', '000018f0-0000-1000-8000-00805f9b34fb'];
+var _BLE_WRITE_CHARS = ['6e400002-b5a3-f393-e0a9-e50e24dcca9e', '00002af1-0000-1000-8000-00805f9b34fb'];
+
+function log(msg) {
+  var el = document.getElementById('debug-log');
+  el.textContent += '[' + new Date().toLocaleTimeString() + '] ' + msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+function toggleDebugLog() {
+  var el = document.getElementById('debug-log');
+  el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+function setPrinterStatus(connected) {
+  document.getElementById('printer-status').textContent = connected ? ('✅ ' + (_printerDevice ? _printerDevice.name : 'Printer')) : '⚠️ Not connected';
+  document.getElementById('printer-status').style.color = connected ? '#28a745' : '#888';
+  var btn = document.getElementById('connect-btn');
+  btn.textContent = connected ? 'Disconnect' : 'Connect Printer';
+  btn.onclick = connected ? disconnectPrinter : function(){ connectPrinter(); };
+}
+
+async function connectPrinter(showAll) {
+  log('--- Connect Printer tapped' + (showAll ? ' (show all devices mode)' : '') + ' ---');
+  if (!navigator.bluetooth) {
+    log('ERROR: navigator.bluetooth is undefined — this browser does not support Web Bluetooth.');
+    alert('Web Bluetooth is not supported on this browser. Use Chrome or Edge.');
+    return;
+  }
+  try {
+    var opts = showAll
+      ? { acceptAllDevices: true, optionalServices: _BLE_SERVICES }
+      : { filters: [{ namePrefix: 'SP320' }, { namePrefix: 'iDPRT' }, { namePrefix: 'IDPRT' }], optionalServices: _BLE_SERVICES };
+    log(showAll ? 'Opening device picker (all nearby devices)…' : 'Opening device picker (SP320 / iDPRT)…');
+    _printerDevice = await navigator.bluetooth.requestDevice(opts);
+    log('Device picked: ' + (_printerDevice.name || '(unnamed)') + ' — id: ' + _printerDevice.id);
+    _printerDevice.addEventListener('gattserverdisconnected', function() {
+      _printerTxChar = null;
+      setPrinterStatus(false);
+      log('Printer disconnected.');
+    });
+    log('Connecting to GATT server…');
+    var server = await _printerDevice.gatt.connect();
+    log('GATT connected. Searching for a write characteristic…');
+    _printerTxChar = null;
+    for (var si = 0; si < _BLE_SERVICES.length && !_printerTxChar; si++) {
+      try {
+        log('  Trying service ' + _BLE_SERVICES[si] + '…');
+        var svc = await server.getPrimaryService(_BLE_SERVICES[si]);
+        log('  Service found. Trying characteristics…');
+        for (var ci = 0; ci < _BLE_WRITE_CHARS.length && !_printerTxChar; ci++) {
+          try { _printerTxChar = await svc.getCharacteristic(_BLE_WRITE_CHARS[ci]); log('  ✓ Write characteristic found: ' + _BLE_WRITE_CHARS[ci]); }
+          catch(ce) { log('  Characteristic ' + _BLE_WRITE_CHARS[ci] + ' not on this service.'); }
+        }
+      } catch(se) { log('  Service not found: ' + se.message); }
+    }
+    if (!_printerTxChar) throw new Error('Printer connected but write channel not found. Contact support.');
+    setPrinterStatus(true);
+    log('--- Connected successfully ---');
+  } catch(e) {
+    log('ERROR (' + (e.name || 'Error') + '): ' + e.message);
+    _printerDevice = null; _printerTxChar = null;
+    setPrinterStatus(false);
+    if (e.name === 'NotFoundError') log('(NotFoundError = picker was closed/cancelled without selecting a device.)');
+    else alert('Connection failed: ' + e.message);
+  }
+}
+
+function disconnectPrinter() {
+  if (_printerDevice && _printerDevice.gatt.connected) _printerDevice.gatt.disconnect();
+  _printerDevice = null; _printerTxChar = null;
+  setPrinterStatus(false);
+}
+
+async function sendToPrinter(tspl) {
+  if (!_printerTxChar) throw new Error('Printer not connected.');
+  var bytes = new TextEncoder().encode(tspl);
+  log('Sending ' + bytes.length + ' bytes to printer in ' + Math.ceil(bytes.length / 100) + ' chunk(s)…');
+  for (var i = 0; i < bytes.length; i += 100) {
+    await _printerTxChar.writeValue(bytes.slice(i, i + 100));
+    await new Promise(function(r) { setTimeout(r, 20); });
+  }
+  log('✓ All bytes sent.');
+}
+
+// ============================================================
+//  PRINT
+// ============================================================
+async function printBatchLabel() {
+  var errEl = document.getElementById('form-error');
+  errEl.style.display = 'none';
+  var sel      = document.getElementById('label-item');
+  var opt      = sel.selectedOptions[0];
+  var itemId   = opt ? opt.value : '';
+  var itemName = opt ? opt.getAttribute('data-name') : '';
+  var storage  = opt ? (opt.getAttribute('data-storage') || 'Refrigerated') : 'Refrigerated';
+  var temp     = document.getElementById('label-temp').value.trim();
+  var operator = document.getElementById('label-operator').value.trim();
+  var qty      = parseInt(document.getElementById('label-qty').value || '1') || 1;
+
+  if (!itemId)   { showFormError('Please select an item.'); return; }
+  if (!temp)     { showFormError('Please enter a temperature.'); return; }
+  if (!operator) { showFormError('Please select an operator.'); return; }
+  if (!_printerTxChar) { showFormError('Printer not connected. Tap Connect Printer first.'); return; }
+
+  var batchId = genBatchId();
+  var now     = new Date();
+  var useBy   = calcUseBy(storage);
+
+  try {
+    var tspl = buildTspl(itemId, itemName, storage, temp, operator, batchId, qty);
+    await sendToPrinter(tspl);
+    rpc('labelKioskSaveBatchLabel', [{
+      batchId: batchId, itemId: itemId, itemName: itemName,
+      producedAt: fmtDate(now) + ' ' + fmtTime(now), operator: operator,
+      tempProduced: temp, storageType: storage, useBy: useBy
+    }]).catch(function(e) { console.error('Batch log failed:', e.message); });
+    alert('Printed — Batch ' + batchId);
+  } catch(e) {
+    log('ERROR printing: ' + e.message);
+    showFormError('Print failed: ' + e.message);
+  }
+}
+</script>
+</body>
+</html>
