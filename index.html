@@ -252,9 +252,9 @@ function calcUseBy(storageType) {
 function fmtDate(d) { return (d.getMonth()+1) + '/' + d.getDate() + '/' + d.getFullYear(); }
 function fmtTime(d) { var h = d.getHours(), m = d.getMinutes(), ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return h + ':' + (m < 10 ? '0'+m : m) + ' ' + ap; }
 
-// 3" x 5" at 203 DPI = 609 x 1015 dots. Content is kept inside a 40-dot margin on every
-// edge (x: 40–569, width 529) — the printer's actual printable area appears to start a bit
-// right of x=0, which clipped the first couple characters of any text at x=15 previously.
+// 3" x 5" at 203 DPI = 609 x 1015 dots. Content inside a 100-dot left margin (confirmed
+// against the real printer). QR bumped up for easier scanning, item name bigger/bolder, and
+// spacing stretched to use the full height instead of leaving ~1" blank at the bottom.
 function buildTspl(itemId, itemName, storageType, temp, operator, batchId, qty) {
   var now     = new Date();
   var datePd  = fmtDate(now);
@@ -263,34 +263,29 @@ function buildTspl(itemId, itemName, storageType, temp, operator, batchId, qty) 
   var warning = storageType === 'Frozen' ? 'MAINTAIN AT 0 F OR BELOW' : 'MAINTAIN AT 41 F OR BELOW';
   var qrData  = itemId + '|' + batchId;
   var name    = itemName.toUpperCase();
-  // Bumped from 40 → 100: moving the margin from 15 to 40 didn't clear the clipping, which
-  // means the printed image itself is being shifted left by the printer's own calibration,
-  // not just individual text starting too close to the edge. If 100 still clips, the shift is
-  // likely proportional/larger than expected — run the printer's built-in self-test/calibration
-  // print (usually hold the feed button while powering on) to check its actual printable width.
-  var L = 100, W = 449; // left margin, content width
+  var L = 100, W = 449;
   return [
     'SIZE 3 INCH,5 INCH',
     'GAP 0.12 INCH,0 INCH',
     'DIRECTION 0',
     'CLS',
-    'QRCODE ' + L + ',40,H,6,A,0,"' + qrData + '"',
-    'TEXT ' + (L + 190) + ',50,"3",0,1,1,"Batch:"',
-    'TEXT ' + (L + 190) + ',80,"3",0,1,1,"' + batchId + '"',
-    'TEXT ' + (L + 190) + ',120,"3",0,1,1,"' + itemId + '"',
-    'BAR ' + L + ',225,' + W + ',3',
-    'TEXT ' + L + ',245,"4",0,2,2,"' + name + '"',
-    'BAR ' + L + ',330,' + W + ',4',
-    'TEXT ' + L + ',350,"3",0,1,2,"' + warning + '"',
-    'BAR ' + L + ',410,' + W + ',4',
-    'TEXT ' + L + ',435,"3",0,1,1,"Produced: ' + datePd + '"',
-    'TEXT ' + L + ',475,"3",0,1,1,"Time:     ' + timePd + '"',
-    'TEXT ' + L + ',515,"3",0,1,1,"Temp:     ' + temp + ' F"',
-    'TEXT ' + L + ',555,"3",0,1,1,"Operator: ' + operator + '"',
-    'BAR ' + L + ',610,' + W + ',4',
-    'TEXT ' + L + ',640,"4",0,2,2,"USE BY:"',
-    'BAR ' + L + ',710,' + W + ',3',
-    'TEXT ' + L + ',760,"5",0,3,3,"' + useBy + '"',
+    'QRCODE ' + L + ',40,H,8,A,0,"' + qrData + '"',
+    'TEXT ' + (L + 220) + ',55,"3",0,1,1,"Batch:"',
+    'TEXT ' + (L + 220) + ',90,"3",0,1,1,"' + batchId + '"',
+    'TEXT ' + (L + 220) + ',125,"3",0,1,1,"' + itemId + '"',
+    'BAR ' + L + ',260,' + W + ',4',
+    'TEXT ' + L + ',280,"4",0,2,3,"' + name + '"',
+    'BAR ' + L + ',400,' + W + ',5',
+    'TEXT ' + L + ',425,"3",0,1,2,"' + warning + '"',
+    'BAR ' + L + ',495,' + W + ',4',
+    'TEXT ' + L + ',520,"3",0,1,1,"Produced: ' + datePd + '"',
+    'TEXT ' + L + ',562,"3",0,1,1,"Time:     ' + timePd + '"',
+    'TEXT ' + L + ',604,"3",0,1,1,"Temp:     ' + temp + ' F"',
+    'TEXT ' + L + ',646,"3",0,1,1,"Operator: ' + operator + '"',
+    'BAR ' + L + ',695,' + W + ',5',
+    'TEXT ' + L + ',720,"4",0,2,2,"USE BY:"',
+    'BAR ' + L + ',805,' + W + ',4',
+    'TEXT ' + L + ',830,"5",0,3,3,"' + useBy + '"',
     'PRINT ' + (qty || 1) + ',1'
   ].join('\r\n') + '\r\n';
 }
