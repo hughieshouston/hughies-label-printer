@@ -263,29 +263,35 @@ function buildTspl(itemId, itemName, storageType, temp, operator, batchId, qty) 
   var warning = storageType === 'Frozen' ? 'MAINTAIN AT 0 F OR BELOW' : 'MAINTAIN AT 41 F OR BELOW';
   var qrData  = itemId + '|' + batchId;
   var name    = itemName.toUpperCase();
-  var L = 100, W = 449;
+  var L = 100, W = 470;
+  // TSPL's built-in bitmap fonts have no bold variant — printing the same text a second time
+  // offset by 2 dots overlaps and thickens the strokes ("double-strike") to fake bold.
+  function bold(x, y, font, xm, ym, text) {
+    return 'TEXT ' + x + ',' + y + ',"' + font + '",0,' + xm + ',' + ym + ',"' + text + '"\r\n' +
+           'TEXT ' + (x + 2) + ',' + y + ',"' + font + '",0,' + xm + ',' + ym + ',"' + text + '"';
+  }
   return [
     'SIZE 3 INCH,5 INCH',
     'GAP 0.12 INCH,0 INCH',
     'DIRECTION 0',
     'CLS',
-    'QRCODE ' + L + ',40,H,8,A,0,"' + qrData + '"',
-    'TEXT ' + (L + 220) + ',55,"3",0,1,1,"Batch:"',
-    'TEXT ' + (L + 220) + ',90,"3",0,1,1,"' + batchId + '"',
-    'TEXT ' + (L + 220) + ',125,"3",0,1,1,"' + itemId + '"',
-    'BAR ' + L + ',260,' + W + ',4',
-    'TEXT ' + L + ',280,"4",0,2,3,"' + name + '"',
-    'BAR ' + L + ',400,' + W + ',5',
-    'TEXT ' + L + ',425,"3",0,1,2,"' + warning + '"',
-    'BAR ' + L + ',495,' + W + ',4',
-    'TEXT ' + L + ',520,"3",0,1,1,"Produced: ' + datePd + '"',
-    'TEXT ' + L + ',562,"3",0,1,1,"Time:     ' + timePd + '"',
-    'TEXT ' + L + ',604,"3",0,1,1,"Temp:     ' + temp + ' F"',
-    'TEXT ' + L + ',646,"3",0,1,1,"Operator: ' + operator + '"',
-    'BAR ' + L + ',695,' + W + ',5',
-    'TEXT ' + L + ',720,"4",0,2,2,"USE BY:"',
-    'BAR ' + L + ',805,' + W + ',4',
-    'TEXT ' + L + ',830,"5",0,3,3,"' + useBy + '"',
+    'QRCODE ' + L + ',40,H,9,A,0,"' + qrData + '"',
+    'TEXT ' + (L + 245) + ',58,"3",0,1,1,"Batch:"',
+    'TEXT ' + (L + 245) + ',95,"3",0,1,1,"' + batchId + '"',
+    'TEXT ' + (L + 245) + ',132,"3",0,1,1,"' + itemId + '"',
+    'BAR ' + L + ',290,' + W + ',5',
+    bold(L, 315, '4', 2, 3, name),
+    'BAR ' + L + ',430,' + W + ',6',
+    'TEXT ' + L + ',455,"3",0,1,2,"' + warning + '"',
+    'BAR ' + L + ',520,' + W + ',5',
+    'TEXT ' + L + ',545,"3",0,1,1,"Produced: ' + datePd + '"',
+    'TEXT ' + L + ',589,"3",0,1,1,"Time:     ' + timePd + '"',
+    'TEXT ' + L + ',633,"3",0,1,1,"Temp:     ' + temp + ' F"',
+    'TEXT ' + L + ',677,"3",0,1,1,"Operator: ' + operator + '"',
+    'BAR ' + L + ',725,' + W + ',6',
+    bold(L, 750, '4', 2, 2, 'USE BY:'),
+    'BAR ' + L + ',850,' + W + ',5',
+    bold(L, 875, '5', 3, 4, useBy),
     'PRINT ' + (qty || 1) + ',1'
   ].join('\r\n') + '\r\n';
 }
