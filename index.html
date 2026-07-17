@@ -263,7 +263,12 @@ function buildTspl(itemId, itemName, storageType, temp, operator, batchId, qty) 
   var warning = storageType === 'Frozen' ? 'MAINTAIN AT 0 F OR BELOW' : 'MAINTAIN AT 41 F OR BELOW';
   var qrData  = itemId + '|' + batchId;
   var name    = itemName.toUpperCase();
-  var L = 40, W = 529; // left margin, content width
+  // Bumped from 40 → 100: moving the margin from 15 to 40 didn't clear the clipping, which
+  // means the printed image itself is being shifted left by the printer's own calibration,
+  // not just individual text starting too close to the edge. If 100 still clips, the shift is
+  // likely proportional/larger than expected — run the printer's built-in self-test/calibration
+  // print (usually hold the feed button while powering on) to check its actual printable width.
+  var L = 100, W = 449; // left margin, content width
   return [
     'SIZE 3 INCH,5 INCH',
     'GAP 0.12 INCH,0 INCH',
