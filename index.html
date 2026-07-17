@@ -236,7 +236,8 @@ function log(msg) {
 }
 function toggleDebugLog() {
   var el = document.getElementById('debug-log');
-  el.style.display = el.style.display === 'none' ? '' : 'none';
+  var isHidden = getComputedStyle(el).display === 'none';
+  el.style.display = isHidden ? 'block' : 'none';
 }
 function setPrinterStatus(connected) {
   document.getElementById('printer-status').textContent = connected ? ('✅ ' + (_printerDevice ? _printerDevice.name : 'Printer')) : '⚠️ Not connected';
