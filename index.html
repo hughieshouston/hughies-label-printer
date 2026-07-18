@@ -244,9 +244,12 @@ function genBatchId() {
   var d = new Date(), p = function(n) { return n < 10 ? '0' + n : '' + n; };
   return 'B' + (d.getFullYear()+'').slice(2) + p(d.getMonth()+1) + p(d.getDate()) + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
 }
+// Production day counts as day 1 of shelf life — Refrigerated: 7 days total (produced 7/18 →
+// use by 7/24, so +6). Frozen: 6 months total (produced 7/18 → use by 1/17, so +6mo -1 day).
 function calcUseBy(storageType) {
   var d = new Date();
-  if (storageType === 'Frozen') d.setMonth(d.getMonth() + 1); else d.setDate(d.getDate() + 7);
+  if (storageType === 'Frozen') { d.setMonth(d.getMonth() + 6); d.setDate(d.getDate() - 1); }
+  else                          { d.setDate(d.getDate() + 6); }
   return (d.getMonth()+1) + '/' + d.getDate() + '/' + d.getFullYear();
 }
 function fmtDate(d) { return (d.getMonth()+1) + '/' + d.getDate() + '/' + d.getFullYear(); }
