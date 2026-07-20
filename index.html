@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hughie's — Label Printer</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <style>
   * { box-sizing: border-box; }
@@ -20,11 +21,45 @@
   .btn-outline:hover { background: #f0f0f0; }
   .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   #printer-status { font-size: 12px; color: #888; }
-  #login-error, #form-error { color: #c00; font-size: 13px; margin-top: 8px; display: none; }
+  #form-error { color: #c00; font-size: 13px; margin-top: 8px; display: none; }
   #app { display: none; }
   #debug-log { display: none; background: #111; color: #3DDAB4; border-radius: 8px; padding: 10px 12px; margin-top: 12px; font-family: monospace; font-size: 11px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; }
   .who { font-size: 12px; color: #888; margin-bottom: 12px; }
   .who button { background: none; border: none; color: #c00; text-decoration: underline; font-weight: 400; padding: 0; margin-left: 6px; }
+
+  /* ── PIN login overlay — matches the other Hughie's kiosks exactly ── */
+  #login-card {
+    position: fixed; inset: 0; background: #111; z-index: 999;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+    font-family: 'Montserrat', sans-serif;
+  }
+  #login-card .lp-login-box { width: 100%; max-width: 320px; text-align: center; }
+  .lp-brand {
+    font-size: 28px; font-weight: 900; color: #fff; letter-spacing: 4px;
+    text-transform: uppercase; line-height: 1; margin-bottom: 6px;
+  }
+  .lp-brand .dot-i { color: #E8192C; text-transform: lowercase; }
+  .lp-subtitle {
+    font-size: 14px; font-weight: 700; letter-spacing: 3px; color: #3DDAB4;
+    text-transform: uppercase; margin-bottom: 32px;
+  }
+  .lp-pin-label { font-size: 13px; color: rgba(255,255,255,.5); margin-bottom: 16px; font-weight: 600; }
+  #login-error { color: #ff7283; font-size: 13px; margin-bottom: 16px; font-weight: 600; display: none; }
+
+  .pin-dot {
+    width: 16px; height: 16px; border-radius: 50%;
+    background: rgba(255,255,255,.15); transition: background .15s;
+  }
+  .pin-dot.filled { background: #3DDAB4; }
+  .pin-key {
+    background: #1e1e1e; border: 1px solid rgba(255,255,255,.08);
+    border-radius: 12px; color: #fff; font-size: 22px; font-weight: 700;
+    font-family: 'Montserrat', sans-serif; padding: 18px 0;
+    cursor: pointer; transition: background .1s;
+  }
+  .pin-key:active { background: #2a2a2a; }
+  .pin-key-clear { font-size: 12px; color: rgba(255,255,255,.4); }
+  .pin-key-del   { font-size: 18px; }
 </style>
 </head>
 <body>
@@ -32,11 +67,36 @@
   <h1>🏷️ Hughie's Label Printer</h1>
 
   <!-- LOGIN -->
-  <div class="card" id="login-card">
-    <label>Station PIN</label>
-    <input type="password" inputmode="numeric" id="login-pin" autocomplete="off" placeholder="••••" style="letter-spacing:6px;font-size:20px;text-align:center">
-    <button class="btn-primary" onclick="doLogin()">Unlock</button>
-    <div id="login-error"></div>
+  <div id="login-card">
+    <div class="lp-login-box">
+      <div class="lp-brand">HUGH<span class="dot-i">i</span>E'S</div>
+      <div class="lp-subtitle">Label Printer Kiosk</div>
+      <div class="lp-pin-label">Enter PIN to continue</div>
+
+      <div style="display:flex;justify-content:center;gap:12px;margin-bottom:24px">
+        <div class="pin-dot" id="dot-0"></div>
+        <div class="pin-dot" id="dot-1"></div>
+        <div class="pin-dot" id="dot-2"></div>
+        <div class="pin-dot" id="dot-3"></div>
+      </div>
+
+      <div id="login-error"></div>
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:280px;margin:0 auto">
+        <button class="pin-key" onclick="lpPinKey('1')">1</button>
+        <button class="pin-key" onclick="lpPinKey('2')">2</button>
+        <button class="pin-key" onclick="lpPinKey('3')">3</button>
+        <button class="pin-key" onclick="lpPinKey('4')">4</button>
+        <button class="pin-key" onclick="lpPinKey('5')">5</button>
+        <button class="pin-key" onclick="lpPinKey('6')">6</button>
+        <button class="pin-key" onclick="lpPinKey('7')">7</button>
+        <button class="pin-key" onclick="lpPinKey('8')">8</button>
+        <button class="pin-key" onclick="lpPinKey('9')">9</button>
+        <button class="pin-key pin-key-clear" onclick="lpPinClear()">Clear</button>
+        <button class="pin-key" onclick="lpPinKey('0')">0</button>
+        <button class="pin-key pin-key-del" onclick="lpPinDel()">⌫</button>
+      </div>
+    </div>
   </div>
 
   <!-- APP -->
@@ -57,7 +117,12 @@
     <div class="row" style="align-items:flex-start;gap:20px;flex-wrap:wrap">
       <div class="card" style="flex:1;min-width:260px">
         <label>Item *</label>
-        <select id="label-item" onchange="onItemSelect()"><option value="">— Select Item —</option></select>
+        <div style="position:relative">
+          <input type="text" id="label-item-search" autocomplete="off" placeholder="Type to search…"
+            oninput="filterItemList()" onfocus="filterItemList()">
+          <div id="label-item-list" style="display:none;position:absolute;z-index:10;left:0;right:0;top:100%;background:#fff;border:1px solid #ddd;border-radius:8px;max-height:220px;overflow-y:auto;box-shadow:0 4px 14px rgba(0,0,0,.12);margin-top:2px"></div>
+          <input type="hidden" id="label-item">
+        </div>
 
         <label>Storage Type</label>
         <div id="storage-display" style="padding:8px 12px;background:#f5f5f5;border-radius:6px;font-size:13px;color:#555">—</div>
@@ -137,27 +202,57 @@ function rpc(fn, args) {
 // ============================================================
 var _unlocked = localStorage.getItem('labelPrinterUnlocked') === 'yes';
 var _foodCatalog = [];
+var _lpPin = '';
+
+function lpPinKey(digit) {
+  if (_lpPin.length >= 4) return;
+  _lpPin += digit;
+  _updateLpPinDots();
+  if (_lpPin.length === 4) doLogin();
+}
+
+function lpPinDel() {
+  _lpPin = _lpPin.slice(0, -1);
+  _updateLpPinDots();
+}
+
+function lpPinClear() {
+  _lpPin = '';
+  _updateLpPinDots();
+  document.getElementById('login-error').style.display = 'none';
+}
+
+function _updateLpPinDots() {
+  for (var i = 0; i < 4; i++) {
+    var dot = document.getElementById('dot-' + i);
+    if (dot) dot.classList.toggle('filled', i < _lpPin.length);
+  }
+}
 
 function doLogin() {
-  var pin   = document.getElementById('login-pin').value.trim();
   var errEl = document.getElementById('login-error');
   errEl.style.display = 'none';
-  if (!pin) { errEl.textContent = 'Enter the station PIN.'; errEl.style.display = 'block'; return; }
-  rpc('labelKioskVerifyPin', [pin])
+  rpc('labelKioskVerifyPin', [_lpPin])
     .then(function() {
       _unlocked = true;
       localStorage.setItem('labelPrinterUnlocked', 'yes');
       showApp();
     })
-    .catch(function(e) { errEl.textContent = e.message; errEl.style.display = 'block'; });
+    .catch(function(e) {
+      _lpPin = '';
+      _updateLpPinDots();
+      errEl.textContent = e.message;
+      errEl.style.display = 'block';
+    });
 }
 
 function doLogout() {
   localStorage.removeItem('labelPrinterUnlocked');
   _unlocked = false;
+  _lpPin = '';
+  _updateLpPinDots();
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-card').style.display = '';
-  document.getElementById('login-pin').value = '';
 }
 
 function showApp() {
@@ -172,12 +267,9 @@ if (_unlocked) showApp();
 function loadData() {
   rpc('labelKioskGetCatalog', [])
     .then(function(cat) {
-      _foodCatalog = cat || [];
-      var sel = document.getElementById('label-item');
-      sel.innerHTML = '<option value="">— Select Item —</option>' +
-        _foodCatalog.map(function(i) {
-          return '<option value="' + esc(i.id) + '" data-name="' + esc(i.name) + '" data-storage="' + esc(i.storageType || 'Refrigerated') + '">' + esc(i.name) + '</option>';
-        }).join('');
+      _foodCatalog = (cat || []).slice().sort(function(a, b) {
+        return String(a.name || '').localeCompare(String(b.name || ''));
+      });
     })
     .catch(function(e) { showFormError(e.message); });
 
@@ -193,10 +285,51 @@ function loadData() {
 function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function showFormError(msg) { var el = document.getElementById('form-error'); el.textContent = msg; el.style.display = 'block'; }
 
+function filterItemList() {
+  var searchEl = document.getElementById('label-item-search');
+  var hidden   = document.getElementById('label-item');
+  if (hidden.value && hidden.getAttribute('data-name') !== searchEl.value) {
+    hidden.value = '';
+    hidden.removeAttribute('data-name');
+    hidden.removeAttribute('data-storage');
+    onItemSelect();
+  }
+  var q    = searchEl.value.trim().toLowerCase();
+  var list = document.getElementById('label-item-list');
+  var matches = (_foodCatalog || []).filter(function(i) {
+    return !q || String(i.name || '').toLowerCase().indexOf(q) !== -1;
+  });
+  if (!matches.length) {
+    list.innerHTML = '<div style="padding:10px 12px;color:#999;font-size:13px">No matches</div>';
+  } else {
+    list.innerHTML = matches.map(function(i) {
+      return '<div class="label-item-opt" data-id="' + esc(i.id) + '" data-name="' + esc(i.name) + '" data-storage="' + esc(i.storageType || 'Refrigerated') + '" ' +
+        'style="padding:10px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid #f0f0f0" onclick="selectItem(this)">' + esc(i.name) + '</div>';
+    }).join('');
+  }
+  list.style.display = 'block';
+}
+
+function selectItem(el) {
+  var hidden = document.getElementById('label-item');
+  hidden.value = el.getAttribute('data-id');
+  hidden.setAttribute('data-name', el.getAttribute('data-name'));
+  hidden.setAttribute('data-storage', el.getAttribute('data-storage'));
+  document.getElementById('label-item-search').value = el.getAttribute('data-name');
+  document.getElementById('label-item-list').style.display = 'none';
+  onItemSelect();
+}
+
+document.addEventListener('click', function(e) {
+  if (e.target.id !== 'label-item-search' && !e.target.closest('#label-item-list')) {
+    var list = document.getElementById('label-item-list');
+    if (list) list.style.display = 'none';
+  }
+});
+
 function onItemSelect() {
-  var sel  = document.getElementById('label-item');
-  var opt  = sel.selectedOptions[0];
-  var stor = opt ? (opt.getAttribute('data-storage') || 'Refrigerated') : '';
+  var el   = document.getElementById('label-item');
+  var stor = el.value ? (el.getAttribute('data-storage') || 'Refrigerated') : '';
   var disp = document.getElementById('storage-display');
   disp.textContent = stor || '—';
   disp.style.color = stor === 'Frozen' ? '#007bff' : (stor ? '#28a745' : '#555');
@@ -204,11 +337,10 @@ function onItemSelect() {
 }
 
 function updatePreview() {
-  var sel      = document.getElementById('label-item');
-  var opt      = sel.selectedOptions[0];
-  var itemId   = opt ? opt.value : '';
-  var itemName = opt ? opt.getAttribute('data-name') : '';
-  var storage  = opt ? (opt.getAttribute('data-storage') || 'Refrigerated') : 'Refrigerated';
+  var el       = document.getElementById('label-item');
+  var itemId   = el.value || '';
+  var itemName = el.getAttribute('data-name');
+  var storage  = el.getAttribute('data-storage') || 'Refrigerated';
   var temp     = document.getElementById('label-temp').value || '';
   var operator = document.getElementById('label-operator').value || '';
   var now      = new Date();
@@ -411,11 +543,10 @@ async function sendToPrinter(tspl) {
 async function printBatchLabel() {
   var errEl = document.getElementById('form-error');
   errEl.style.display = 'none';
-  var sel      = document.getElementById('label-item');
-  var opt      = sel.selectedOptions[0];
-  var itemId   = opt ? opt.value : '';
-  var itemName = opt ? opt.getAttribute('data-name') : '';
-  var storage  = opt ? (opt.getAttribute('data-storage') || 'Refrigerated') : 'Refrigerated';
+  var el       = document.getElementById('label-item');
+  var itemId   = el.value || '';
+  var itemName = el.getAttribute('data-name');
+  var storage  = el.getAttribute('data-storage') || 'Refrigerated';
   var temp     = document.getElementById('label-temp').value.trim();
   var operator = document.getElementById('label-operator').value.trim();
   var qty      = parseInt(document.getElementById('label-qty').value || '1') || 1;
